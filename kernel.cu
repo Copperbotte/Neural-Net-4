@@ -1,4 +1,6 @@
 
+#include "OGLWindow.h"
+
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
@@ -36,6 +38,8 @@ int main()
         fprintf(stderr, "cudaDeviceReset failed!");
         return 1;
     }
+
+    oglWindow();
 
     return 0;
 }
