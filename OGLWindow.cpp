@@ -3,92 +3,173 @@
 //CUDA by example
 //https://developer.download.nvidia.com/books/cuda-by-example/cuda-by-example-sample.pdf
 
-#include <iostream>
-#include <Windows.h>
-
-#include <fstream>
-#include <string>
-#include <sstream>
-#include <random>
-
-#include "glad/glad.h"
-#include "glfw/glfw3.h"
+#include "OGLWindow.h"
 
 #pragma comment (lib, "opengl32.lib")
 #pragma comment (lib, "glfw3.lib")
 #pragma comment (lib, "glfw3dll.lib")
 
-using namespace std;
-
-const int width = 800,
-height = 600;
-unsigned char colorbuffer[width * height * 4];
-
-int clamp(int x, int low, int high)
+OGLWindow::OGLWindow()
+    : _width(800), _height(600), _name("OGLWindow"), _printFunc(nullptr), _thinkFunc(nullptr), _colorBuffer(nullptr)
 {
-    if (x < low) x = low;
-    if (high < x) x = high;
-    return x;
+    _colorBuffer = new unsigned char[4 * _width * _height];
 }
 
-int oglWindow()
+OGLWindow::~OGLWindow()
 {
+    close();
+    //delete[] _colorBuffer;
+}
+
+OGLWindow::OGLWindow(const char* name)
+    : _width(800), _height(600), _name(name), _printFunc(nullptr), _thinkFunc(nullptr), _colorBuffer(nullptr)
+{
+    _colorBuffer = new unsigned char[4 * _width * _height];
+}
+
+OGLWindow::OGLWindow(int width, int height)
+    : _width(width), _height(height), _name("OGLWindow"), _printFunc(nullptr), _thinkFunc(nullptr), _colorBuffer(nullptr)
+{
+    _colorBuffer = new unsigned char[4 * _width * _height];
+}
+
+OGLWindow::OGLWindow(const char* name, int width, int height) 
+    : _width(width), _height(height), _name(name), _printFunc(nullptr), _thinkFunc(nullptr), _colorBuffer(nullptr)
+{
+    _colorBuffer = new unsigned char[4 * _width * _height];
+}
+
+const char* OGLWindow::getName() const
+{
+    return _name;
+}
+
+void OGLWindow::setName(const char* name)
+{
+    _name = name;
+}
+
+void OGLWindow::setPrintFunc(void (*print)(const char*))
+{
+    _printFunc = print;
+}
+
+void OGLWindow::setThinkFunc(void(*thinkFunc)(OGLWindow* This, double time))
+{
+    _thinkFunc = thinkFunc;
+}
+
+int OGLWindow::getWidth() const
+{
+    return _width;
+}
+
+int OGLWindow::getHeight() const
+{
+    return _height;
+}
+
+GLFWwindow* OGLWindow::getWindowPtr() const
+{
+    return _window;
+}
+
+unsigned char* OGLWindow::getColorBufferPtr() const
+{
+    return _colorBuffer;
+}
+
+void OGLWindow::fillColorBuffer(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
+{
+    for (int n = 0; n < _width * _height; ++n)
+    {
+        char* c = (char*)(_colorBuffer) + 4 * n;
+        c[0] = r;
+        c[1] = g;
+        c[2] = b;
+        c[3] = a;
+    }
+}
+
+void OGLWindow::print(const char* str)
+{
+    if (_printFunc)
+        _printFunc(str);
+}
+
+GLFWwindow* OGLWindow::init()
+{
+    //setPrintFunc([](const char* in){cout << in << '\n'; }); // how to set constant lambda?
+
     const char* prog_title = "NN4";
-    cout << prog_title << '\n';
+
+    print(prog_title);
 
     //initialize library
     if (!glfwInit())
     {
-        cout << "GLFW Failed to init" << endl;
-        return -1;
+        print("GLFW Failed to init");
+        _window = nullptr;
+        return _window;
     }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 4);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
     glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
 
-    GLFWwindow* window = glfwCreateWindow(width, height, prog_title, NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(_width, _height, prog_title, NULL, NULL);
     if (!window)
     {
-        cout << "GLFW Window failed to create" << endl;
+        print("GLFW Window failed to create");
         glfwTerminate();
-        return -1;
+        _window = nullptr;
+        return _window;
     }
 
     glfwMakeContextCurrent(window);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
-        cout << "Failed to initialize GLAD" << endl;
+        print("Failed to initialize GLAD");
         glfwTerminate();
-        return -1;
+        _window = nullptr;
+        return _window;
     }
 
-    cout << "Opengl " << glGetString(GL_VERSION) << " GLSL" << glGetString(GL_SHADING_LANGUAGE_VERSION) << endl;
+    print("Opengl");
+    print((const char*)glGetString(GL_VERSION));
+    print("GLSL");
+    print((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION));
 
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, _width, _height);
 
-    for (int i = 0; i < width * height * 4; ++i)
-        colorbuffer[i] = 0xFF;
+    _window = window;
+    return _window;
+}
 
+void OGLWindow::think()
+{
+    if (!_thinkFunc)
+        return;
 
-    for (int n = 0; n < width * height; ++n)
+    while (!glfwWindowShouldClose(_window))
     {
-        char* c = (char*)(colorbuffer)+4 * n;
-        c[0] = 0xFF;
-        c[1] = 0x8F;
-        c[2] = 0x00;
-    }
-
-    while (!glfwWindowShouldClose(window))
-    {
-        glDrawPixels(width, height, GL_RGBA, GL_UNSIGNED_BYTE, colorbuffer);
-
-        glfwSwapBuffers(window);
+        _thinkFunc(this, 0.0);
+        glDrawPixels(_width, _height, GL_RGBA, GL_UNSIGNED_BYTE, _colorBuffer);
+        glfwSwapBuffers(_window);
         glfwPollEvents();
+    }
+}
+
+void OGLWindow::close()
+{
+    if (_colorBuffer)
+    {
+        delete[] _colorBuffer;
+        _colorBuffer = nullptr;
     }
 
     glfwTerminate();
 
-    return 0;
+    print("closed!");
 }

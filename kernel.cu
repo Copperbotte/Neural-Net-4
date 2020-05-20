@@ -5,6 +5,14 @@
 #include "device_launch_parameters.h"
 
 #include <stdio.h>
+#include <iostream>
+
+int clamp(int x, int low, int high)
+{
+    if (x < low) x = low;
+    if (high < x) x = high;
+    return x;
+}
 
 cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
@@ -39,7 +47,26 @@ int main()
         return 1;
     }
 
-    oglWindow();
+    OGLWindow wnd("NN4");
+
+    wnd.setPrintFunc([](const char* str) {std::cout << str << '\n'; });
+    wnd.fillColorBuffer(0xFF, 0x8F, 0x00, 0xFF);
+
+    GLFWwindow* window = wnd.init();
+    wnd.setThinkFunc([](OGLWindow* This, double time)
+        {
+            GLFWwindow* window = This->getWindowPtr();
+            double mx, my;
+            glfwGetCursorPos(window, &mx, &my);
+
+            //my = height - my;
+
+            //mx = clamp(mx, 0, width - 1);
+            //my = clamp(my, 0, height - 1);
+
+            //float fm[2] = { (float)mx / width, (float)my / height };
+        });
+    wnd.think();
 
     return 0;
 }
