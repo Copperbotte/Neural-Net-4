@@ -31,15 +31,17 @@ int main()
     float i_sample[] = { 1.0, 1.0 };
     matrix input = matrix(1, 2, i_sample);
     matrix output = net.forwardProp(input);
-
+    /*
     for (int r = 0; r < output.getRows(); ++r)
     {
         for (int c = 0; c < output.getCols(); ++c)
             std::cout << output.getData(c, r) << ", ";
         std::cout << "\n";
-    }
-        
+    }*/
 
+    float o_sample[] = { 0.5 };
+    matrix expected = matrix(1, 1, o_sample);
+    float err = net.backProp(input, expected);
 
     const int arraySize = 5;
     const int a[arraySize] = { 1, 2, 3, 4, 5 };

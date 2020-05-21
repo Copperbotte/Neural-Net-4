@@ -17,16 +17,17 @@ public:
 	NNet();
 	~NNet();
 	NNet(int shapelen, int* shape);
-	NNet(NNet &N);
+	NNet(const NNet &N);
 
 	matrix& getWeights(int n);
-	matrix& setWeights(int n, matrix& W);
+	matrix& setWeights(int n, const matrix& W);
 
 	NNet& operator= (const NNet& N);
 
 	void randomizeNodes();
 
-	matrix forwardProp(matrix& data);
-
+	void   forwardPropArray(const matrix& data,		  matrix* nodes);
+	matrix forwardProp	   (const matrix& data);
+	float  backProp		   (const matrix& data, const matrix& expected);
 };
 

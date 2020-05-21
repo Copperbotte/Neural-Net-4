@@ -46,7 +46,7 @@ NNet::NNet(int shapelen, int* shape):_shapelen(shapelen)
 	BuildData();
 }
 
-NNet::NNet(NNet& N):_shapelen(N._shapelen)
+NNet::NNet(const NNet& N):_shapelen(N._shapelen)
 {
 	_shape = new int[_shapelen];
 	memcpy(_shape, N._shape, _shapelen * sizeof(int));
@@ -69,7 +69,7 @@ matrix& NNet::getWeights(int n)
 	return _weights[n];
 }
 
-matrix& NNet::setWeights(int n, matrix& W)
+matrix& NNet::setWeights(int n, const matrix& W)
 {
 	bool e_range = n < 0 || _shapelen - 2 < n;
 	if (e_range)
@@ -107,7 +107,27 @@ void NNet::randomizeNodes()
 				_weights[n].setData(c, r, Random.xorshfdbl());
 }
 
-matrix NNet::forwardProp(matrix& data)
+void NNet::forwardPropArray(const matrix& data, matrix* nodes)
+{
+	//copy matrix, with an extra slot as a bias
+	nodes[0] = data;
+	for (int i = 0; i < _shapelen - 1; ++i)
+	{
+		matrix bias = matrix(1, nodes[i].getRows() + 1, nullptr);
+		for (int r = 0; r < nodes[i].getRows(); ++r)
+			bias.setData(0, r + 1, nodes[i].getData(0, r));
+		bias.setData(0, 0, 1.0);
+
+		//sigmoid input
+		for (int r = 1; r < bias.getRows(); ++r)
+			bias.setData(0, r, sigmoid(bias.getData(0, r)));
+
+		//forward propogate
+		nodes[i+1] = _weights[i] * bias;
+	}
+}
+
+matrix NNet::forwardProp(const matrix& data)
 {
 	//copy matrix, with an extra slot as a bias
 	matrix node = data;
@@ -127,6 +147,49 @@ matrix NNet::forwardProp(matrix& data)
 	}
 	
 	return node;
+}
+
+float NNet::backProp(const matrix& data, const matrix& expected)
+{
+	//build node array
+	matrix* nodes = new matrix[_shapelen];
+	forwardPropArray(data, nodes);
+
+	matrix* _weightDelta = new matrix[_shapelen - 1];
+	for (int n = 0; n < _shapelen - 1; ++n)
+		_weightDelta[n] = matrix(_shape[n] + 1, _shape[n + 1], nullptr);
+
+	matrix deltaNode = nodes[_shapelen - 1] - expected;
+	float error = (deltaNode.transpose() * deltaNode).getData(0, 0) / 4.0;
+
+	//deltaNode = deltaNode.transpose();
+	for (int n = _shapelen - 2; 0 <= n; --n)
+	{
+		matrix sig = nodes[n];
+		matrix dsig = nodes[n];
+		for (int r = 1; r < sig.getRows(); ++r)
+		{
+			sig.setData(0, r, sigmoid(sig.getData(0, r)));
+			dsig.setData(0, r, dsigmoid(dsig.getData(0, r)));
+		}
+		
+		deltaNode = deltaNode.transpose();
+
+		//delta NNet is the unique combo of sigma(N1) * dN2
+		_weightDelta[n] = sig * deltaNode;
+
+		//backpropogate to the previous node
+		matrix dNodeBias = (deltaNode * _weights[n]).transpose();
+
+		//strip bias
+		deltaNode = matrix(1, dNodeBias.getRows() - 1, dNodeBias.getDataPtr());
+
+		//sigmoid derivative
+		for (int r = 0; r < deltaNode.getRows(); ++r)
+			deltaNode.setData(0, r, deltaNode.getData(0, r) * 0.5 * dsig.getData(0, r));
+	}
+
+	return error;
 }
 
 

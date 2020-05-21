@@ -187,7 +187,7 @@ matrix matrix::operator*(const matrix& R) const
 
 matrix matrix::transpose() const
 {
-	matrix M(cols, rows, nullptr);
+	matrix M(rows, cols, nullptr);
 
 	for (int c = 0; c < cols; ++c)
 		for (int r = 0; r < rows; ++r)
