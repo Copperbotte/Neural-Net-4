@@ -1,5 +1,6 @@
 
 #include "OGLWindow.h"
+#include "NNet.h"
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -24,6 +25,22 @@ __global__ void addKernel(int *c, const int *a, const int *b)
 
 int main()
 {
+    NNet net = NNet();
+    net.randomizeNodes();
+
+    float i_sample[] = { 1.0, 1.0 };
+    matrix input = matrix(1, 2, i_sample);
+    matrix output = net.forwardProp(input);
+
+    for (int r = 0; r < output.getRows(); ++r)
+    {
+        for (int c = 0; c < output.getCols(); ++c)
+            std::cout << output.getData(c, r) << ", ";
+        std::cout << "\n";
+    }
+        
+
+
     const int arraySize = 5;
     const int a[arraySize] = { 1, 2, 3, 4, 5 };
     const int b[arraySize] = { 10, 20, 30, 40, 50 };
