@@ -26,27 +26,32 @@ __global__ void addKernel(int *c, const int *a, const int *b)
 
 int main()
 {
-    int shape[] = { 2, 3, 1 };
+    int shape[] = { 2, 3, 5, 3, 1 };
     int shapelen = sizeof(shape) / sizeof(int);
 
-    NNet net = NNet(shapelen, shape);
+    NNet net = NNet();// shapelen, shape);
     net.randomizeNodes(GetTickCount());
 
+    //generate test data
     random Random(GetTickCount() + 10000);
 
     float **i_function = new float*[100];
     float* o_function = new float[100];
     matrix* i_matrix = new matrix[100];
     matrix* o_matrix = new matrix[100];
+    float (*test_func)(float, float) = [](float x, float y)
+    {
+        float X = x - 1;
+        if (X * X + y * y < 4.0) return 1.0f;
+        return -1.0f;
+        //return sin(2.0f * x) * sin(2.0f * y);
+    };
     for (int i = 0; i < 100; ++i)
     {
         i_function[i] = new float[2];
         float x = Random.xorshfdbl() * 6.0 - 3.0;
         float y = Random.xorshfdbl() * 6.0 - 3.0;
-        //float o = 1.0;
-        //if ((x+2.0) * (x+2.0) + (y+2.0) * (y+2.0) > 1)
-        //    o = -1.0;
-        float o = sin(4*x) * sin(4*y);
+        float o = test_func(x, y);
         i_function[i][0] = x;
         i_function[i][1] = y;
         o_function[i] = o;
@@ -78,6 +83,9 @@ int main()
         return 1;
     }
 
+    //for (int i = 0; i < 100000; ++i)
+    //    net.backPropArray(i_matrix, o_matrix, 100);
+
     OGLWindow wnd("NN4");
 
     wnd.setPrintFunc([](const char* str) {std::cout << str << '\n'; });
@@ -106,7 +114,7 @@ int main()
                 float Y = ((float)y / (float)H) * 6.0 - 3.0;
                 float lpi_sample[] = { X,Y };
                 matrix lpinput = matrix(1, 2, lpi_sample);
-                //float out = sin(X) * sin(Y);
+                //float out = test_func(X, Y);
                 float out = net.forwardProp(lpinput).getData(0,0);
                 out = tanh(out);
                 out = (out + 1.0) / 2.0;

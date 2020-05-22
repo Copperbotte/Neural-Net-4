@@ -5,13 +5,21 @@
 class NNet
 {
 	int _shapelen;
-	int* _shape;
 
+	int* _shape;
 	matrix* _weights;
 
+	typedef float (*p_sFunc)(float);
+	p_sFunc*  _sigmoids;
+	p_sFunc* _dsigmoids;
+
+	float _rate;
+
 	void BuildData();
-	float sigmoid(float x);
-	float dsigmoid(float x);
+	static float s_tanh(float x);
+	static float s_dtanh(float x);
+	static float s_const(float x);
+	static float s_dconst(float x);
 
 public:
 	NNet();
@@ -19,10 +27,16 @@ public:
 	NNet(int shapelen, int* shape);
 	NNet(const NNet &N);
 
-	matrix& getWeights(int n);
-	matrix& setWeights(int n, const matrix& W);
-
 	NNet& operator= (const NNet& N);
+
+	const matrix& getWeights(int n) const;
+		  matrix& setWeights(int n, const matrix& W);
+	
+	void  setSigmoid(int n, p_sFunc func);
+	void setdSigmoid(int n, p_sFunc func);
+
+	float getRate() const;
+	float setRate(float rate);
 
 	void randomizeNodes(unsigned long seed);
 
