@@ -24,7 +24,7 @@ public:
 
 	NNet& operator= (const NNet& N);
 
-	void randomizeNodes();
+	void randomizeNodes(unsigned long seed);
 
 	void   forwardPropArray(const matrix& data,		  matrix* nodes);
 	matrix forwardProp	   (const matrix& data);

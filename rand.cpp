@@ -3,9 +3,9 @@
 #include "rand.h"
 
 
-random::random()
+random::random(unsigned long seed)
 {
-	unsigned long init[3] = { 123456789, 362436069, 521288629 };
+	unsigned long init[3] = { seed, 362436069, 521288629 };
 	memcpy(xorshfnums, &init, sizeof(init));
 }
 

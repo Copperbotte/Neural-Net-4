@@ -3,6 +3,7 @@
 #include <math.h>
 #include <string>
 #include "rand.h"
+#include <iostream>
 
 void NNet::BuildData()
 {
@@ -98,13 +99,13 @@ NNet& NNet::operator=(const NNet& N)
 	return *this;
 }
 
-void NNet::randomizeNodes()
+void NNet::randomizeNodes(unsigned long seed)
 {
-	random Random = random();
+	random Random = random(seed);
 	for (int n = 0; n < _shapelen - 1; ++n)
 		for (int c = 0; c < _weights[n].getCols(); ++c)
 			for (int r = 0; r < _weights[n].getRows(); ++r)
-				_weights[n].setData(c, r, Random.xorshfdbl());
+				_weights[n].setData(c, r, Random.xorshfdbl() * 2.0 - 1.0);
 }
 
 void NNet::forwardPropArray(const matrix& data, matrix* nodes)
@@ -164,9 +165,13 @@ float NNet::backPropArray(matrix* data, const matrix* expected, unsigned int dat
 	{
 		forwardPropArray(data[i], nodes);
 
-		matrix deltaNode = nodes[_shapelen - 1] - expected[i];
+		matrix deltaNode = (expected[i] - nodes[_shapelen - 1]) * 2.0;
 		float error = (deltaNode.transpose() * deltaNode).getData(0, 0) / 4.0;
 		batchError += error;
+
+		//std::cout << "node:   " << nodes[_shapelen - 1].getData(0, 0) << '\n';
+		//std::cout << "expect: " << expected[i].getData(0, 0) << '\n';
+		//std::cout << "delta:  " << deltaNode.getData(0, 0) << '\n';
 
 		for (int n = _shapelen - 2; 0 <= n; --n)
 		{
@@ -203,9 +208,22 @@ float NNet::backPropArray(matrix* data, const matrix* expected, unsigned int dat
 		}
 	}
 
-	float rate = 0.5;
+	
+	float rate = 0.25;
 	for (int n = 0; n < _shapelen - 1; ++n)
-		_weights[n] -= _weightDelta[n] * (rate / (float)datalen);
+	{
+		_weights[n] += _weightDelta[n] * (rate / (float)datalen);
+		/*
+		for (int r = 0; r < _weightDelta[n].getRows(); ++r)
+		{
+			for (int c = 0; c < _weightDelta[n].getCols(); ++c)
+				std::cout << _weightDelta[n].getData(c, r) << ", ";
+			std::cout << "\n";
+		}
+		std::cout << '\n';
+		*/
+	}
+	
 
 	delete[] nodes;
 	delete[] _weightDelta;
@@ -223,7 +241,7 @@ float NNet::backProp(const matrix& data, const matrix& expected)
 	for (int n = 0; n < _shapelen - 1; ++n)
 		_weightDelta[n] = matrix(_shape[n] + 1, _shape[n + 1], nullptr);
 
-	matrix deltaNode = nodes[_shapelen - 1] - expected;
+	matrix deltaNode = (nodes[_shapelen - 1] - expected) * 2.0;
 	float error = (deltaNode.transpose() * deltaNode).getData(0, 0) / 4.0;
 
 	for (int n = _shapelen - 2; 0 <= n; --n)

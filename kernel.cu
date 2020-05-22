@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <iostream>
+#include "rand.h"
 
 int clamp(int x, int low, int high)
 {
@@ -32,8 +33,13 @@ struct pass_data
 
 int main()
 {
-    NNet net = NNet();
-    net.randomizeNodes();
+    int shape[] = { 2, 3, 1 };
+    int shapelen = sizeof(shape) / sizeof(int);
+
+    NNet net = NNet(shapelen, shape);
+    net.randomizeNodes(GetTickCount());
+
+    random Random(GetTickCount() + 10000);
 
     float **i_function = new float*[100];
     float* o_function = new float[100];
@@ -42,30 +48,20 @@ int main()
     for (int i = 0; i < 100; ++i)
     {
         i_function[i] = new float[2];
-        int x = i % 10;
-        int y = i / 10;
-        i_function[i][0] = (float)x * (10.0 / 6.0);
-        i_function[i][1] = (float)y * (10.0 / 6.0);
-        o_function[i] = sin(i_function[i][0]) * sin(i_function[i][1]);
+        float x = Random.xorshfdbl() * 6.0 - 3.0;
+        float y = Random.xorshfdbl() * 6.0 - 3.0;
+        //float o = 1.0;
+        //if ((x+2.0) * (x+2.0) + (y+2.0) * (y+2.0) > 1)
+        //    o = -1.0;
+        float o = sin(4*x) * sin(4*y);
+        i_function[i][0] = x;
+        i_function[i][1] = y;
+        o_function[i] = o;
         i_matrix[i] = matrix(1, 2, i_function[i]);
         o_matrix[i] = matrix(1, 1, nullptr);
         o_matrix[i].setData(0, 0, o_function[i]);
     }
     
-    /*
-    for (int i = 0; i < 1000; ++i)
-    {
-        //float err = net.backProp(input, expected);
-        float err = net.backPropArray(i_matrix, o_matrix, 100);
-        std::cout << i << " : " << err << '\n';
-    }
-
-    for (int i = 0; i < 100; ++i)
-        delete[] i_function[i];
-    delete[] o_function;
-    delete[] i_matrix;
-    delete[] o_matrix;
-    */
     const int arraySize = 5;
     const int a[arraySize] = { 1, 2, 3, 4, 5 };
     const int b[arraySize] = { 10, 20, 30, 40, 50 };
@@ -109,8 +105,12 @@ int main()
             pass_data *p = (pass_data*)This->extra;
             NNet* Net = p->Net;
 
-            float err = Net->backPropArray(p->in, p->out, 100);
-            std::cout << err << '\n';
+            for (int i = 0; i < 100; ++i)
+            {
+                float err = Net->backPropArray(p->in, p->out, 100);
+                if(i == 100 - 1)
+                    std::cout << err << '\n';
+            }
 
             int H = This->getHeight();
             int W = This->getWidth();
@@ -121,10 +121,11 @@ int main()
                 for (int x = 0; x < W; ++x)
                 {
                     unsigned char *c = (y*W + x)*4 + P;
-                    float X = 2.0 * (float)x / (float)W;
-                    float Y = 2.0 * (float)y / (float)H;
+                    float X = ((float)x / (float)W) * 6.0 - 3.0;
+                    float Y = ((float)y / (float)H) * 6.0 - 3.0;
                     float lpi_sample[] = { X,Y };
                     matrix lpinput = matrix(1, 2, lpi_sample);
+                    //float out = sin(X) * sin(Y);
                     float out = Net->forwardProp(lpinput).getData(0,0);
                     out = tanh(out);
                     out = (out + 1.0) / 2.0;
@@ -147,6 +148,12 @@ int main()
             //float fm[2] = { (float)mx / width, (float)my / height };
         });
     wnd.think();
+
+    for (int i = 0; i < 100; ++i)
+        delete[] i_function[i];
+    delete[] o_function;
+    delete[] i_matrix;
+    delete[] o_matrix;
 
     return 0;
 }
