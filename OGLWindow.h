@@ -41,4 +41,6 @@ public:
 
 	void close();
 
+	void* extra;
+
 };

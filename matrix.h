@@ -2,9 +2,6 @@
 #include <Windows.h>
 #include <stdexcept>
 
-#include <Windows.h>
-#include <stdexcept>
-
 class matrix
 {
 	int cols, rows;
@@ -31,14 +28,15 @@ public:
 	matrix  operator- (void) const;
 	matrix& operator+=(const matrix& R);
 	matrix& operator-=(const matrix& R);
-	matrix& operator*=(float   f);
+	matrix& operator*=(      float   f);
 	matrix& operator*=(const matrix& R);
-	matrix& operator/=(float   f);
+	matrix& operator/=(      float   f);
 
 	//binary operators
 	matrix  operator+ (const matrix& R) const;
 	matrix  operator- (const matrix& R) const;
 	matrix  operator* (const matrix& R) const;
+	matrix  operator* (float   f) const;
 
 	//transform operations
 	matrix  transpose() const;

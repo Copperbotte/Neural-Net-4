@@ -185,6 +185,15 @@ matrix matrix::operator*(const matrix& R) const
 	return M;
 }
 
+matrix matrix::operator*(float f) const
+{
+	matrix M(*this);
+	for (int c = 0; c < M.cols; ++c)
+		for (int r = 0; r < M.rows; ++r)
+			M.setData(c, r, M.getData(c, r) * f);
+	return M;
+}
+
 matrix matrix::transpose() const
 {
 	matrix M(rows, cols, nullptr);

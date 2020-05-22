@@ -29,19 +29,17 @@ int main()
     net.randomizeNodes();
 
     float i_sample[] = { 1.0, 1.0 };
-    matrix input = matrix(1, 2, i_sample);
-    matrix output = net.forwardProp(input);
-    /*
-    for (int r = 0; r < output.getRows(); ++r)
-    {
-        for (int c = 0; c < output.getCols(); ++c)
-            std::cout << output.getData(c, r) << ", ";
-        std::cout << "\n";
-    }*/
-
     float o_sample[] = { 0.5 };
+    matrix input = matrix(1, 2, i_sample);
     matrix expected = matrix(1, 1, o_sample);
-    float err = net.backProp(input, expected);
+    matrix output = net.forwardProp(input);
+
+    for (int i = 0; i < 100000; ++i)
+    {
+        float err = net.backProp(input, expected);
+        if(i % 1000 == 0)
+            std::cout << i << " : " << err << '\n';
+    }
 
     const int arraySize = 5;
     const int a[arraySize] = { 1, 2, 3, 4, 5 };
@@ -68,6 +66,8 @@ int main()
 
     OGLWindow wnd("NN4");
 
+    wnd.extra = &net;
+
     wnd.setPrintFunc([](const char* str) {std::cout << str << '\n'; });
     wnd.fillColorBuffer(0xFF, 0x8F, 0x00, 0xFF);
 
@@ -75,8 +75,44 @@ int main()
     wnd.setThinkFunc([](OGLWindow* This, double time)
         {
             GLFWwindow* window = This->getWindowPtr();
-            double mx, my;
-            glfwGetCursorPos(window, &mx, &my);
+            
+            NNet *Net = (NNet*)This->extra;
+            /*
+            float li_sample[] = { 1.0, 1.0 };
+            float lo_sample[] = { 0.5 };
+            matrix linput = matrix(1, 2, li_sample);
+            matrix lexpected = matrix(1, 1, lo_sample);
+            float err = Net->backProp(linput, lexpected);
+            std::cout << err << '\n';
+            */
+
+            int H = This->getHeight();
+            int W = This->getWidth();
+            unsigned char *P = This->getColorBufferPtr();
+
+            for (int y = 0; y < H; ++y)
+            {
+                for (int x = 0; x < W; ++x)
+                {
+                    unsigned char *c = (y*W + x)*4 + P;
+                    float X = 2.0 * (float)x / (float)W;
+                    float Y = 2.0 * (float)y / (float)H;
+                    float lpi_sample[] = { X,Y };
+                    matrix lpinput = matrix(1, 2, lpi_sample);
+                    float out = Net->forwardProp(lpinput).getData(0,0);
+                    if (out < 0.0f) out = 0.0f;
+                    out = tanh(out);
+                    //if (1.0f < out) out = 1.0f;
+                    unsigned char color = (int)(out * 255.0f);
+                    c[0] = color;
+                    c[1] = color;
+                    c[2] = color;
+                    c[3] = 0xFF;
+                }
+            }
+
+            //double mx, my;
+            //glfwGetCursorPos(window, &mx, &my);
 
             //my = height - my;
 
