@@ -152,13 +152,16 @@ void OGLWindow::think()
     if (!_thinkFunc)
         return;
 
-    while (!glfwWindowShouldClose(_window))
-    {
+    while (thinkStep())
         _thinkFunc(this, 0.0);
-        glDrawPixels(_width, _height, GL_RGBA, GL_UNSIGNED_BYTE, _colorBuffer);
-        glfwSwapBuffers(_window);
-        glfwPollEvents();
-    }
+}
+
+bool OGLWindow::thinkStep()
+{
+    glDrawPixels(_width, _height, GL_RGBA, GL_UNSIGNED_BYTE, _colorBuffer);
+    glfwSwapBuffers(_window);
+    glfwPollEvents();
+    return !glfwWindowShouldClose(_window);
 }
 
 void OGLWindow::close()

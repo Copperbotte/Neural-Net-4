@@ -24,13 +24,6 @@ __global__ void addKernel(int *c, const int *a, const int *b)
     c[i] = a[i] + b[i];
 }
 
-struct pass_data
-{
-    NNet* Net;
-    matrix* in;
-    matrix* out;
-};
-
 int main()
 {
     int shape[] = { 2, 3, 1 };
@@ -87,67 +80,54 @@ int main()
 
     OGLWindow wnd("NN4");
 
-    pass_data p;
-    p.Net = &net;
-    p.in = i_matrix;
-    p.out = o_matrix;
-
-    wnd.extra = &p;
-
     wnd.setPrintFunc([](const char* str) {std::cout << str << '\n'; });
     wnd.fillColorBuffer(0xFF, 0x8F, 0x00, 0xFF);
 
     GLFWwindow* window = wnd.init();
-    wnd.setThinkFunc([](OGLWindow* This, double time)
+    while (wnd.thinkStep())
+    {
+        for (int i = 0; i < 100; ++i)
         {
-            GLFWwindow* window = This->getWindowPtr();
-            
-            pass_data *p = (pass_data*)This->extra;
-            NNet* Net = p->Net;
+            float err = net.backPropArray(i_matrix, o_matrix, 100);
+            if(i == 100 - 1)
+                std::cout << err << '\n';
+        }
 
-            for (int i = 0; i < 100; ++i)
+        int H = wnd.getHeight();
+        int W = wnd.getWidth();
+        unsigned char *P = wnd.getColorBufferPtr();
+
+        for (int y = 0; y < H; ++y)
+        {
+            for (int x = 0; x < W; ++x)
             {
-                float err = Net->backPropArray(p->in, p->out, 100);
-                if(i == 100 - 1)
-                    std::cout << err << '\n';
+                unsigned char *c = (y*W + x)*4 + P;
+                float X = ((float)x / (float)W) * 6.0 - 3.0;
+                float Y = ((float)y / (float)H) * 6.0 - 3.0;
+                float lpi_sample[] = { X,Y };
+                matrix lpinput = matrix(1, 2, lpi_sample);
+                //float out = sin(X) * sin(Y);
+                float out = net.forwardProp(lpinput).getData(0,0);
+                out = tanh(out);
+                out = (out + 1.0) / 2.0;
+                unsigned char color = (int)(out * 255.0f);
+                c[0] = color;
+                c[1] = color;
+                c[2] = color;
+                c[3] = 0xFF;
             }
+        }
 
-            int H = This->getHeight();
-            int W = This->getWidth();
-            unsigned char *P = This->getColorBufferPtr();
+        //double mx, my;
+        //glfwGetCursorPos(window, &mx, &my);
 
-            for (int y = 0; y < H; ++y)
-            {
-                for (int x = 0; x < W; ++x)
-                {
-                    unsigned char *c = (y*W + x)*4 + P;
-                    float X = ((float)x / (float)W) * 6.0 - 3.0;
-                    float Y = ((float)y / (float)H) * 6.0 - 3.0;
-                    float lpi_sample[] = { X,Y };
-                    matrix lpinput = matrix(1, 2, lpi_sample);
-                    //float out = sin(X) * sin(Y);
-                    float out = Net->forwardProp(lpinput).getData(0,0);
-                    out = tanh(out);
-                    out = (out + 1.0) / 2.0;
-                    unsigned char color = (int)(out * 255.0f);
-                    c[0] = color;
-                    c[1] = color;
-                    c[2] = color;
-                    c[3] = 0xFF;
-                }
-            }
+        //my = height - my;
 
-            //double mx, my;
-            //glfwGetCursorPos(window, &mx, &my);
+        //mx = clamp(mx, 0, width - 1);
+        //my = clamp(my, 0, height - 1);
 
-            //my = height - my;
-
-            //mx = clamp(mx, 0, width - 1);
-            //my = clamp(my, 0, height - 1);
-
-            //float fm[2] = { (float)mx / width, (float)my / height };
-        });
-    wnd.think();
+        //float fm[2] = { (float)mx / width, (float)my / height };
+    }
 
     for (int i = 0; i < 100; ++i)
         delete[] i_function[i];

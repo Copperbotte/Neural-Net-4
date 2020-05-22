@@ -38,9 +38,8 @@ public:
 
 	GLFWwindow* init();
 	void think();
+	bool thinkStep();
 
 	void close();
-
-	void* extra;
 
 };
