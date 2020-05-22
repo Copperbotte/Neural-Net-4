@@ -7,9 +7,38 @@
 void NNet::BuildData()
 {
 	_weights = new matrix[_shapelen - 1];
+	_sigmoids = new p_sFunc[_shapelen - 1];
+	_dsigmoids = new p_sFunc[_shapelen - 1];
 	for (int n = 0; n < _shapelen - 1; ++n)
+	{
 		_weights[n] = matrix(_shape[n] + 1, _shape[n + 1], nullptr);
-	//[n] + 1 is the bias
+		//[n] + 1 is the bias
+		_sigmoids[n] = NNet::s_tanh;
+		_dsigmoids[n] = NNet::s_dtanh;
+	}
+	_sigmoids[0] = NNet::s_const;
+	_dsigmoids[0] = NNet::s_dconst;
+}
+
+float NNet::s_tanh(float x)
+{
+	return tanh(x);
+}
+
+float NNet::s_dtanh(float x)
+{
+	float sig = NNet::s_tanh(x);
+	return 1.0 - sig * sig;
+}
+
+float NNet::s_const(float x)
+{
+	return x;
+}
+
+float NNet::s_dconst(float x)
+{
+	return 1.0f;
 }
 
 NNet::NNet():_shapelen(5),_rate(0.5)
@@ -24,8 +53,12 @@ NNet::~NNet()
 {
 	delete[] _shape;
 	delete[] _weights;
+	delete[] _sigmoids;
+	delete[] _dsigmoids;
 	_shape = nullptr;
 	_weights = nullptr;
+	_sigmoids = nullptr;
+	_dsigmoids = nullptr;
 }
 
 NNet::NNet(int shapelen, int* shape):_shapelen(shapelen),_rate(0.5)
@@ -88,6 +121,32 @@ matrix& NNet::setWeights(int n, const matrix& W)
 	return _weights[n];
 }
 
+void NNet::setSigmoid(int n, p_sFunc func)
+{
+	bool e_range = n < 0 || _shapelen - 2 < n;
+	if (e_range)
+	{
+		std::string e_message("Neural Net sigmoid access out of range! ");
+		e_message += "Length: " + std::to_string(_shapelen) + ", Accessed: " + std::to_string(n) + "\n";
+		throw std::out_of_range(e_message);
+		return;
+	}
+	_sigmoids[n] = func;
+}
+
+void NNet::setdSigmoid(int n, p_sFunc func)
+{
+	bool e_range = n < 0 || _shapelen - 2 < n;
+	if (e_range)
+	{
+		std::string e_message("Neural Net sigmoid derivative access out of range! ");
+		e_message += "Length: " + std::to_string(_shapelen) + ", Accessed: " + std::to_string(n) + "\n";
+		throw std::out_of_range(e_message);
+		return;
+	}
+	_dsigmoids[n] = func;
+}
+
 float NNet::getRate() const
 {
 	return _rate;
@@ -110,9 +169,6 @@ void NNet::randomizeNodes(unsigned long seed)
 
 void NNet::forwardPropArray(const matrix& data, matrix* nodes)
 {
-	float  (*s_tanh)(float) = [](float x) {return (float)tanh(x); };
-	float (*s_const)(float) = [](float x) {return x; };
-
 	//copy matrix, with an extra slot as a bias
 	nodes[0] = data;
 	for (int i = 0; i < _shapelen - 1; ++i)
@@ -123,10 +179,8 @@ void NNet::forwardPropArray(const matrix& data, matrix* nodes)
 		bias.setData(0, 0, 1.0);
 
 		//sigmoid input
-		float (*_sigmoid)(float) = s_tanh;
-		if (i == 0) _sigmoid = s_const;
 		for (int r = 1; r < bias.getRows(); ++r)
-			bias.setData(0, r, _sigmoid(bias.getData(0, r)));
+			bias.setData(0, r, _sigmoids[i](bias.getData(0, r)));
 
 		//forward propogate
 		nodes[i+1] = _weights[i] * bias;
@@ -137,9 +191,7 @@ matrix NNet::forwardProp(const matrix& data)
 {
 	//forwardProp should be fast, and abstracting to forwardPropArray requires dynamic memory.
 	//Allocation and deallocation of dynamic memory is slow, and should be avoided here.
-	float  (*s_tanh)(float) = [](float x) {return (float)tanh(x); };
-	float (*s_const)(float) = [](float x) {return x; };
-
+	
 	//copy matrix, with an extra slot as a bias
 	matrix node = data;
 	for (int i = 0; i < _shapelen - 1; ++i)
@@ -150,10 +202,8 @@ matrix NNet::forwardProp(const matrix& data)
 		bias.setData(0, 0, 1.0);
 
 		//sigmoid input
-		float (*_sigmoid)(float) = s_tanh;
-		if (i == 0) _sigmoid = s_const;
 		for (int r = 1; r < bias.getRows(); ++r)
-			bias.setData(0, r, _sigmoid(bias.getData(0, r)));
+			bias.setData(0, r, _sigmoids[i](bias.getData(0, r)));
 
 		//forward propogate
 		node = _weights[i] * bias;
@@ -181,12 +231,6 @@ float NNet::backPropArray(matrix* data, const matrix* expected, unsigned int dat
 		float error = (deltaNode.transpose() * deltaNode).getData(0, 0) / 4.0;
 		batchError += error;
 
-		//define sigmoids
-		float   (*s_tanh)(float) = [](float x) {return (float)tanh(x); };
-		float  (*s_dtanh)(float) = [](float x) {float t = tanh(x); return 1.0f - t * t; };
-		float  (*s_const)(float) = [](float x) {return x; };
-		float (*s_dconst)(float) = [](float x) {return 1.0f; };
-
 		for (int n = _shapelen - 2; 0 <= n; --n)
 		{
 			//add bias
@@ -198,18 +242,10 @@ float NNet::backPropArray(matrix* data, const matrix* expected, unsigned int dat
 			matrix dsig = sig;
 
 			//build sigmoid vectors
-			float  (*_sigmoid)(float) =  s_tanh;
-			float (*_dsigmoid)(float) = s_dtanh;
-			if (n == 0)
-			{
-				_sigmoid = s_const;
-				_dsigmoid = s_dconst;
-			}
-
 			for (int r = 1; r < sig.getRows(); ++r)
 			{
-				sig.setData(0, r, _sigmoid(sig.getData(0, r)));
-				dsig.setData(0, r, _dsigmoid(dsig.getData(0, r)));
+				sig.setData(0, r, _sigmoids[n](sig.getData(0, r)));
+				dsig.setData(0, r, _dsigmoids[n](dsig.getData(0, r)));
 			}
 
 			deltaNode = deltaNode.transpose();
