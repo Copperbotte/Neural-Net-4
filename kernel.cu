@@ -23,24 +23,49 @@ __global__ void addKernel(int *c, const int *a, const int *b)
     c[i] = a[i] + b[i];
 }
 
+struct pass_data
+{
+    NNet* Net;
+    matrix* in;
+    matrix* out;
+};
+
 int main()
 {
     NNet net = NNet();
     net.randomizeNodes();
 
-    float i_sample[] = { 1.0, 1.0 };
-    float o_sample[] = { 0.5 };
-    matrix input = matrix(1, 2, i_sample);
-    matrix expected = matrix(1, 1, o_sample);
-    matrix output = net.forwardProp(input);
-
-    for (int i = 0; i < 100000; ++i)
+    float **i_function = new float*[100];
+    float* o_function = new float[100];
+    matrix* i_matrix = new matrix[100];
+    matrix* o_matrix = new matrix[100];
+    for (int i = 0; i < 100; ++i)
     {
-        float err = net.backProp(input, expected);
-        if(i % 1000 == 0)
-            std::cout << i << " : " << err << '\n';
+        i_function[i] = new float[2];
+        int x = i % 10;
+        int y = i / 10;
+        i_function[i][0] = (float)x * (10.0 / 6.0);
+        i_function[i][1] = (float)y * (10.0 / 6.0);
+        o_function[i] = sin(i_function[i][0]) * sin(i_function[i][1]);
+        i_matrix[i] = matrix(1, 2, i_function[i]);
+        o_matrix[i] = matrix(1, 1, nullptr);
+        o_matrix[i].setData(0, 0, o_function[i]);
+    }
+    
+    /*
+    for (int i = 0; i < 1000; ++i)
+    {
+        //float err = net.backProp(input, expected);
+        float err = net.backPropArray(i_matrix, o_matrix, 100);
+        std::cout << i << " : " << err << '\n';
     }
 
+    for (int i = 0; i < 100; ++i)
+        delete[] i_function[i];
+    delete[] o_function;
+    delete[] i_matrix;
+    delete[] o_matrix;
+    */
     const int arraySize = 5;
     const int a[arraySize] = { 1, 2, 3, 4, 5 };
     const int b[arraySize] = { 10, 20, 30, 40, 50 };
@@ -66,7 +91,12 @@ int main()
 
     OGLWindow wnd("NN4");
 
-    wnd.extra = &net;
+    pass_data p;
+    p.Net = &net;
+    p.in = i_matrix;
+    p.out = o_matrix;
+
+    wnd.extra = &p;
 
     wnd.setPrintFunc([](const char* str) {std::cout << str << '\n'; });
     wnd.fillColorBuffer(0xFF, 0x8F, 0x00, 0xFF);
@@ -76,15 +106,11 @@ int main()
         {
             GLFWwindow* window = This->getWindowPtr();
             
-            NNet *Net = (NNet*)This->extra;
-            /*
-            float li_sample[] = { 1.0, 1.0 };
-            float lo_sample[] = { 0.5 };
-            matrix linput = matrix(1, 2, li_sample);
-            matrix lexpected = matrix(1, 1, lo_sample);
-            float err = Net->backProp(linput, lexpected);
+            pass_data *p = (pass_data*)This->extra;
+            NNet* Net = p->Net;
+
+            float err = Net->backPropArray(p->in, p->out, 100);
             std::cout << err << '\n';
-            */
 
             int H = This->getHeight();
             int W = This->getWidth();
@@ -100,9 +126,8 @@ int main()
                     float lpi_sample[] = { X,Y };
                     matrix lpinput = matrix(1, 2, lpi_sample);
                     float out = Net->forwardProp(lpinput).getData(0,0);
-                    if (out < 0.0f) out = 0.0f;
                     out = tanh(out);
-                    //if (1.0f < out) out = 1.0f;
+                    out = (out + 1.0) / 2.0;
                     unsigned char color = (int)(out * 255.0f);
                     c[0] = color;
                     c[1] = color;

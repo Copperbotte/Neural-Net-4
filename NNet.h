@@ -28,6 +28,7 @@ public:
 
 	void   forwardPropArray(const matrix& data,		  matrix* nodes);
 	matrix forwardProp	   (const matrix& data);
+	float  backPropArray   (      matrix* data, const matrix* expected,  unsigned int datalen);
 	float  backProp		   (const matrix& data, const matrix& expected);
 };
 

@@ -149,6 +149,70 @@ matrix NNet::forwardProp(const matrix& data)
 	return node;
 }
 
+float NNet::backPropArray(matrix* data, const matrix* expected, unsigned int datalen)
+{
+	//build node array
+	matrix* nodes = new matrix[_shapelen];
+
+	matrix* _weightDelta = new matrix[_shapelen - 1];
+	for (int n = 0; n < _shapelen - 1; ++n)
+		_weightDelta[n] = matrix(_shape[n] + 1, _shape[n + 1], nullptr);
+	
+	float batchError = 0.0f;
+
+	for (int i = 0; i < datalen; ++i)
+	{
+		forwardPropArray(data[i], nodes);
+
+		matrix deltaNode = nodes[_shapelen - 1] - expected[i];
+		float error = (deltaNode.transpose() * deltaNode).getData(0, 0) / 4.0;
+		batchError += error;
+
+		for (int n = _shapelen - 2; 0 <= n; --n)
+		{
+			//add bias
+			matrix sig(1, nodes[n].getRows() + 1, nullptr);
+			sig.setData(0, 0, 1.0);
+			for (int r = 0; r < nodes[n].getRows(); ++r)
+				sig.setData(0, r + 1, nodes[n].getData(0, r));
+
+			matrix dsig = sig;
+
+			for (int r = 1; r < sig.getRows(); ++r)
+			{
+				sig.setData(0, r, sigmoid(sig.getData(0, r)));
+				dsig.setData(0, r, dsigmoid(dsig.getData(0, r)));
+			}
+
+			deltaNode = deltaNode.transpose();
+
+			//delta NNet is the unique combo of sigma(N1) * dN2
+			_weightDelta[n] += (sig * deltaNode).transpose();
+
+			//backpropogate to the previous node
+			matrix dNodeBias = (deltaNode * _weights[n]).transpose();
+
+			//strip bias
+			deltaNode = matrix(1, dNodeBias.getRows() - 1, nullptr);
+			for (int r = 0; r < deltaNode.getRows(); ++r)
+				deltaNode.setData(0, r, dNodeBias.getData(0, r + 1));
+
+			//sigmoid derivative
+			for (int r = 0; r < deltaNode.getRows(); ++r)
+				deltaNode.setData(0, r, deltaNode.getData(0, r) * 0.5 * dsig.getData(0, r + 1));
+		}
+	}
+
+	float rate = 0.5;
+	for (int n = 0; n < _shapelen - 1; ++n)
+		_weights[n] -= _weightDelta[n] * (rate / (float)datalen);
+
+	delete[] nodes;
+	delete[] _weightDelta;
+
+	return batchError / (float)datalen;
+}
+
 float NNet::backProp(const matrix& data, const matrix& expected)
 {
 	//build node array
@@ -181,7 +245,7 @@ float NNet::backProp(const matrix& data, const matrix& expected)
 		deltaNode = deltaNode.transpose();
 
 		//delta NNet is the unique combo of sigma(N1) * dN2
-		_weightDelta[n] = sig * deltaNode;
+		_weightDelta[n] = (sig * deltaNode).transpose();
 		
 		//backpropogate to the previous node
 		matrix dNodeBias = (deltaNode * _weights[n]).transpose();
@@ -198,7 +262,10 @@ float NNet::backProp(const matrix& data, const matrix& expected)
 
 	float rate = 0.5;
 	for (int n = 0; n < _shapelen - 1; ++n)
-		_weights[n] -= _weightDelta[n].transpose() * rate;
+		_weights[n] -= _weightDelta[n] * rate;
+
+	delete[] nodes;
+	delete[] _weightDelta;
 
 	return error;
 }
