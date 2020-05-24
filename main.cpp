@@ -1,7 +1,8 @@
 
 #include <iostream>
 #include <Windows.h>
-#include "cudaNNetProcessor.h"
+#include "cudaNNetProcessor.cuh"
+#include "cudaNNetRenderer.cuh"
 #include "OGLWindow.h"
 #include "NNet.h"
 #include "rand.h"
@@ -39,16 +40,16 @@ int main()
     wnd.fillColorBuffer(0xFF, 0x8F, 0x00, 0xFF);
     wnd.init();
 
-    cudaNNetProcessor cnnp(net, wnd);
+    cudaNNetRenderer cnnr(net, wnd);
     cudaError cudaStatus = cudaSuccess;
 
     while (wnd.thinkStep())
     {
-        cudaStatus = cnnp.cudaCopyNNet();
-        cudaStatus = cnnp.cudaRenderNNet();
+        cudaStatus = cnnr.cudaCopyNNet();
+        cudaStatus = cnnr.cudaRenderNNet();
 
         float err = 0.0f;
-        for (int i = 0; i < 100; ++i)
+        for (int i = 0; i < 1; ++i)
             err = net.backPropArray(i_matrix, o_matrix, 100);
         cout << err << '\n';
     }

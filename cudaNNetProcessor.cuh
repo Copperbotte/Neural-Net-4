@@ -27,32 +27,25 @@ struct cuMatrix
 
 class cudaNNetProcessor
 {
-public:
-    unsigned char* _cuColorBuffer;
-
+protected:
     cuMatrix* _cuWeights;
     float** _cuWeightData;
     unsigned int _numWeights;
     int* _cuNumWeights;
 
     NNet* _pNet;
-    const OGLWindow* _pWnd;
 
-    dim3 _grid;
+    cudaError makeBuffers();
+    void makeMallocError(const char* err, cudaError cudaStatus) const;
+    void makeMemcpyError(const char* err, cudaError cudaStatus) const;
+    void safeFree(void** ptr);
 
-    void makeBuffers();
-
-//public:
+public:
 
     cudaNNetProcessor();
     ~cudaNNetProcessor();
-    cudaNNetProcessor(NNet& pNet, const OGLWindow& wnd);
+    cudaNNetProcessor(NNet& pNet);
     cudaNNetProcessor(const cudaNNetProcessor& N);
-    
-    cudaError cudaCopyNNet() const;
 
-    //problem specific functions
-    //should this be in a child class?
-    cudaError cudaRenderNNet() const;
-
+    cudaError cudaCopyNNet() const; 
 };
