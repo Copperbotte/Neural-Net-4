@@ -29,6 +29,9 @@ public:
 
 	NNet& operator= (const NNet& N);
 
+	int getShapeLen() const;
+	int getShape(int n) const;
+
 	const matrix& getWeights(int n) const;
 		  matrix& setWeights(int n, const matrix& W);
 	

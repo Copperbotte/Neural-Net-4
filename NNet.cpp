@@ -91,6 +91,25 @@ NNet& NNet::operator=(const NNet& N)
 	return *this;
 }
 
+int NNet::getShapeLen() const
+{
+	return _shapelen;
+}
+
+int NNet::getShape(int n) const
+{
+	bool e_range = n < 0 || _shapelen - 1 < n;
+	if (e_range)
+	{
+		std::string e_message("Neural Net shape access out of range! ");
+		e_message += "Nodes: " + std::to_string(_shapelen) + ", Accessed: " + std::to_string(n) + "\n";
+		throw std::out_of_range(e_message);
+		return 0;
+	}
+
+	return _shape[n];
+}
+
 const matrix& NNet::getWeights(int n) const
 {
 	bool e_range = n < 0 || _shapelen - 2 < n;

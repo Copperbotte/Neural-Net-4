@@ -24,12 +24,198 @@ __global__ void addKernel(int *c, const int *a, const int *b)
     c[i] = a[i] + b[i];
 }
 
+struct cuMatrix
+{
+    int cols, rows;
+    float* data;
+
+    __device__ cuMatrix() :cols(1), rows(1)
+    {
+        data = new float[1];
+        data[0] = 1.0;
+    }
+
+    __device__ __host__ ~cuMatrix()
+    {
+        delete[] data;
+        cols = rows = 0;
+        data = nullptr;
+    }
+
+    __device__ cuMatrix(int Cols, int Rows):cols(Cols),rows(Rows)
+    {
+        data = new float[cols * rows];
+        for (int i = 0; i < cols * rows; ++i)
+            data[i] = 0.0f;
+    }
+
+    __device__ cuMatrix(int Cols, int Rows, const float* Data) : cols(Cols), rows(Rows)
+    {
+        data = new float[cols * rows];
+        memcpy(data, Data, cols * rows * sizeof(float));
+    }
+
+    __device__ __host__ cuMatrix(const cuMatrix& R) : cols(R.cols), rows(R.rows)
+    {
+        data = new float[cols * rows];
+        memcpy(data, R.data, cols * rows * sizeof(float));
+    }
+
+    __host__ cuMatrix(const matrix& R) :cols(R.getCols()), rows(R.getRows())
+    {
+        data = new float[cols * rows];
+        memcpy(data, R.getDataPtr(), cols * rows * sizeof(float));
+    }
+
+    __device__ __host__ cuMatrix& operator=(const cuMatrix& R)
+    {
+        delete[] data;
+        cols = R.cols;
+        rows = R.rows;
+        data = new float[cols * rows];
+        memcpy(data, R.data, rows * cols * sizeof(float));
+        return *this;
+    }
+
+    __device__ cuMatrix operator*(const cuMatrix& R) const
+    {
+        cuMatrix M(R.cols, rows);
+        for (int c = 0; c < M.cols; ++c)
+            for (int r = 0; r < M.rows; ++r)
+                for (int n = 0; n < cols; ++n)
+                    M.setData(c, r, M.getData(c, r) + getData(n, r) * R.getData(c, n));
+        return M;
+    }
+
+    __device__ float getData(int c, int r) const
+    {
+        return data[r * cols + c];
+    }
+
+    __device__ void setData(int c, int r, float d)
+    {
+        data[r * cols + c] = d;
+    }
+
+};
+
+__constant__ int cuShapeLen[1];
+//__constant__ int* cuSigmoidIndices; //hardcoded: 0 is const, 1 is tanh
+
+__device__ cuMatrix cuForwardProp(cuMatrix &input, const cuMatrix *cuWeights)
+{
+    //this should have as much static memory as possible
+    cuMatrix node = input;
+    
+    for (int i = 0; i < cuShapeLen[0] - 1; ++i)
+    {
+        cuMatrix bias = cuMatrix(1, node.rows + 1);
+        memcpy(&bias.data[1], node.data, node.rows * sizeof(float));
+        bias.setData(0, 0, 1.0f);
+
+        for (int r = 1; r < node.rows; ++r)
+        {
+            //apply sigmoid
+            float sig = bias.getData(0, r);
+            //if (cuSigmoidIndices[i] == 1)
+            if(0 < i)
+                sig = tanhf(sig);
+            bias.setData(0, r, sig);
+        }
+
+        //forward propogate
+        node = cuWeights[i] * bias;
+    }
+
+    return node;
+}
+
+__global__ void kernel(unsigned char* colorBuffer, cuMatrix *cuWeights)
+{
+    int x = blockIdx.x;
+    int y = blockIdx.y;
+    int offset = x + y * gridDim.x;
+
+    float X = (((float)x / (float)gridDim.x) * 2.0 - 1.0) * 3.0;
+    float Y = (((float)y / (float)gridDim.y) * 2.0 - 1.0) * 3.0;
+
+    float initialNode[2] = { X, Y };
+    float result = cuForwardProp(cuMatrix(1, 2, initialNode), cuWeights).getData(0, 0);
+    
+    result = tanhf(result);
+    result = (result + 1.0f) / 2.0f;
+
+    //int icolor = (unsigned char)(result * 255.0f);
+    //if (255 < icolor) icolor = 255;
+    unsigned char color = (unsigned char)(result * 255.0f);
+    unsigned char* px = colorBuffer + 4 * offset;
+    px[0] = color;
+    px[1] = color;
+    px[2] = color;
+    px[3] = 0xFF;
+}
+
+__global__ void debugMatrixKernel(unsigned char* colorBuffer, cuMatrix* cuWeights)
+{
+    int x = blockIdx.x;
+    int y = blockIdx.y;
+    int offset = x + y * gridDim.x;
+
+    float X = (((float)x / (float)gridDim.x) * 2.0 - 1.0) * 5.0 + 5.0;
+    float Y = (((float)y / (float)gridDim.y) * 2.0 - 1.0) * 5.0 * (3.0 / 4.0) + 3.0;
+
+    float pi = 3.141592;
+    float result = sinf(X * pi) * sinf(X * pi) * sinf(Y * pi) * sinf(Y * pi);
+    result = powf(result, 0.1);
+
+    float initialNode[3] = { 1.0, X, Y };
+    cuMatrix matrixTest = cuWeights[0] * cuMatrix(1, 3, initialNode);
+    result = matrixTest.getData(0, 0);
+
+    //matrixTest = cuMatrix(1, 2, initialNode);
+
+    /*/
+    //Array content debugging
+    if (0.0 < X && X < matrixTest.cols)
+        if (0.0 < Y && Y < matrixTest.rows)
+            result = matrixTest.getData((int)X, (int)Y);
+
+    //*/
+    /*
+    //Array size debugging
+    if (0.0 < X && X < matrixTest.cols)
+        if (0.0 < Y && Y < matrixTest.rows)
+            result = 0.0f;
+    //*/
+
+    //Array count debugging
+    /*
+    if (0.0 < X && X < cuShapeLen[0])
+        if (0.0 < Y && Y < 1.0)
+            result = 0.0f;
+    */
+
+    result = tanhf(result);
+    result = (result + 1.0f) / 2.0f;
+
+    int icolor = (unsigned char)(result * 255.0f);
+    if (255 < icolor) icolor = 255;
+    unsigned char color = icolor;
+    unsigned char* px = colorBuffer + 4 * offset;
+    px[0] = color;
+    px[1] = color;
+    px[2] = color;
+    px[3] = 0xFF;
+}
+
 int main()
 {
-    int shape[] = { 2, 3, 5, 3, 1 };
+    int shape[] = { 2, 3, 1 };
+    //int shape[] = { 2, 1 };
     int shapelen = sizeof(shape) / sizeof(int);
 
-    NNet net = NNet();// shapelen, shape);
+    //NNet net = NNet();
+    NNet net = NNet(shapelen, shape);
     net.randomizeNodes(GetTickCount());
 
     //generate test data
@@ -45,6 +231,7 @@ int main()
         if (X * X + y * y < 4.0) return 1.0f;
         return -1.0f;
         //return sin(2.0f * x) * sin(2.0f * y);
+        //return x + y - 2;
     };
     for (int i = 0; i < 100; ++i)
     {
@@ -59,71 +246,106 @@ int main()
         o_matrix[i] = matrix(1, 1, nullptr);
         o_matrix[i].setData(0, 0, o_function[i]);
     }
+    /*
+    for (int i = 0; i < 1000; ++i)
+    {
+        net.backPropArray(i_matrix, o_matrix, 100);
+        if (i % 100 == 0)
+            std::cout << i << '\n';
+    } */
     
-    const int arraySize = 5;
-    const int a[arraySize] = { 1, 2, 3, 4, 5 };
-    const int b[arraySize] = { 10, 20, 30, 40, 50 };
-    int c[arraySize] = { 0 };
-
-    // Add vectors in parallel.
-    cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addWithCuda failed!");
-        return 1;
-    }
-
-    printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-        c[0], c[1], c[2], c[3], c[4]);
-
-    // cudaDeviceReset must be called before exiting in order for profiling and
-    // tracing tools such as Nsight and Visual Profiler to show complete traces.
-    cudaStatus = cudaDeviceReset();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceReset failed!");
-        return 1;
-    }
-
-    //for (int i = 0; i < 100000; ++i)
-    //    net.backPropArray(i_matrix, o_matrix, 100);
-
+    //create window
     OGLWindow wnd("NN4");
 
     wnd.setPrintFunc([](const char* str) {std::cout << str << '\n'; });
     wnd.fillColorBuffer(0xFF, 0x8F, 0x00, 0xFF);
 
     GLFWwindow* window = wnd.init();
+
+    //initialize cuda
+    unsigned char* dev_bmp;
+    cudaError cudaStatus = cudaSuccess;
+    cudaStatus = cudaMalloc((void**)&dev_bmp, wnd.getWidth() * wnd.getHeight() * 4 * sizeof(char));
+    if (cudaStatus != cudaSuccess)
+    {
+        std::cout << "Failed to allocate bitmap on gpu\n";
+        std::cout << "error code: " << cudaGetErrorString(cudaStatus);
+        for (int i = 0; i < 100; ++i)
+            delete[] i_function[i];
+        delete[] o_function;
+        delete[] i_matrix;
+        delete[] o_matrix;
+        return;
+    }
+
+    
+    //copy shape length
+    int netshapelen = net.getShapeLen();
+    //cudaStatus = cudaMalloc((void**)&cuShapeLen, sizeof(int));
+    cudaStatus = cudaMemcpyToSymbol(cuShapeLen, &netshapelen, sizeof(int), 0, cudaMemcpyHostToDevice);
+
+    /*
+    //copy sigmoid lookup (hardcoded)
+    int* cuSigmoidIndices;
+    cudaStatus = cudaMalloc((void**)&cuSigmoidIndices, netshapelen * sizeof(int));
+    int *SigmoidIndices = new int[netshapelen];
+    for (int i = 1; i < netshapelen; ++i)
+        SigmoidIndices[i] = 1;
+    SigmoidIndices[0] = 0;
+    cudaStatus = cudaMemcpy(cuSigmoidIndices, SigmoidIndices, netshapelen * sizeof(int), cudaMemcpyHostToDevice);
+    */
+
+    //initialize weights
+    cuMatrix* cuWeights;
+    float** cuDataPtr = new float* [netshapelen - 1];
+    cudaStatus = cudaMalloc((void**)&cuWeights, (netshapelen - 1) * sizeof(cuMatrix));
+    for (int i = 0; i < netshapelen - 1; ++i)
+    {
+        cuMatrix temp = cuMatrix(net.getWeights(i));
+        cudaStatus = cudaMemcpy(&cuWeights[i], &temp, sizeof(cuMatrix), cudaMemcpyHostToDevice);
+
+        float* tempData;
+        size_t tempDataSize = temp.cols * temp.rows * sizeof(float);
+        cudaStatus = cudaMalloc((void**)&tempData, tempDataSize);
+        cudaStatus = cudaMemcpy(tempData, temp.data, tempDataSize, cudaMemcpyHostToDevice);
+        cudaStatus = cudaMemcpy(&(cuWeights[i].data), &tempData, sizeof(float*), cudaMemcpyHostToDevice);
+        cuDataPtr[i] = tempData;
+    }
+
+    dim3 grid(wnd.getWidth(), wnd.getHeight());
+    
+    net.setRate(0.5);
+
     while (wnd.thinkStep())
     {
+        float err = 0.0f;
         for (int i = 0; i < 100; ++i)
+            err = net.backPropArray(i_matrix, o_matrix, 100);
+        std::cout << err << '\n';
+        
+        //copy weights
+        for (int i = 0; i < net.getShapeLen() - 1; ++i)
         {
-            float err = net.backPropArray(i_matrix, o_matrix, 100);
-            if(i == 100 - 1)
-                std::cout << err << '\n';
-        }
-
-        int H = wnd.getHeight();
-        int W = wnd.getWidth();
-        unsigned char *P = wnd.getColorBufferPtr();
-
-        for (int y = 0; y < H; ++y)
-        {
-            for (int x = 0; x < W; ++x)
+            cudaStatus = cudaMemcpy(cuDataPtr[i], net.getWeights(i).getDataPtr(),
+                net.getWeights(i).getCols() * net.getWeights(i).getRows() * sizeof(float),
+                cudaMemcpyHostToDevice);
+            if (cudaStatus != cudaSuccess)
             {
-                unsigned char *c = (y*W + x)*4 + P;
-                float X = ((float)x / (float)W) * 6.0 - 3.0;
-                float Y = ((float)y / (float)H) * 6.0 - 3.0;
-                float lpi_sample[] = { X,Y };
-                matrix lpinput = matrix(1, 2, lpi_sample);
-                //float out = test_func(X, Y);
-                float out = net.forwardProp(lpinput).getData(0,0);
-                out = tanh(out);
-                out = (out + 1.0) / 2.0;
-                unsigned char color = (int)(out * 255.0f);
-                c[0] = color;
-                c[1] = color;
-                c[2] = color;
-                c[3] = 0xFF;
+                std::cout << "Failed to copy matrix memory to gpu\n";
+                std::cout << "error code : " << cudaGetErrorString(cudaStatus);
+                break;
             }
+        }
+        
+        //render screen
+        kernel <<<grid, 1 >>> (dev_bmp, cuWeights);
+        cudaStatus = cudaMemcpy(wnd.getColorBufferPtr(), dev_bmp,
+            wnd.getWidth() * wnd.getHeight() * 4 * sizeof(char), cudaMemcpyDeviceToHost);
+        if (cudaStatus != cudaSuccess)
+        {
+            std::cout << "Failed to copy memory from gpu\n";
+            std::cout << "error code : " << cudaGetErrorString(cudaStatus);
+            break;
         }
 
         //double mx, my;
@@ -137,11 +359,28 @@ int main()
         //float fm[2] = { (float)mx / width, (float)my / height };
     }
 
+
     for (int i = 0; i < 100; ++i)
         delete[] i_function[i];
     delete[] o_function;
     delete[] i_matrix;
     delete[] o_matrix;
+
+    cudaFree(dev_bmp);
+
+    //cudaFree(cuSigmoidIndices);
+    for (int i = 0; i < net.getShapeLen() - 1; ++i)
+        cudaFree(cuDataPtr[i]);
+    delete[] cuDataPtr;
+    cudaFree(cuWeights);
+    
+    // cudaDeviceReset must be called before exiting in order for profiling and
+    // tracing tools such as Nsight and Visual Profiler to show complete traces.
+    cudaStatus = cudaDeviceReset();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaDeviceReset failed!");
+        return 1;
+    }
 
     return 0;
 }
