@@ -6,6 +6,8 @@ class cudaNNetRenderer : public cudaNNetProcessor
 {
 private:
 	unsigned char* _cuColorBuffer;
+	cuMatrix* _cuFinalNodeBuffer;
+	float* _cuFinalNodeBufferData;
 
 	const OGLWindow* _pWnd;
 
@@ -21,4 +23,5 @@ public:
 	cudaNNetRenderer(const cudaNNetRenderer& R);
 
 	cudaError cudaRenderNNet() const;
+	cudaError cudaNNetRenderer::cudaRenderNNetMonolithic() const;
 };
