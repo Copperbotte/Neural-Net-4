@@ -11,7 +11,8 @@
 __global__ void kernel(unsigned char* colorBuffer, cuMatrix* cuWeights, int* cuNumWeights);
 __global__ void testKernel(unsigned char* colorBuffer, cuMatrix* cuWeights, int* cuNumWeights);
 
-__global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuWeights, int* cuNumWeights);
+__global__ void keRasterize(cuMatrix* cuInitialNode);
+__global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuInitialNode, cuMatrix* cuWeights, int* cuNumWeights);
 __global__ void keDisplayNodes(unsigned char* cuColorBuffer, cuMatrix* cuFinalNode);
 
 cudaError cudaNNetRenderer::makeBuffers()
@@ -40,54 +41,73 @@ cudaError cudaNNetRenderer::makeBuffers()
 		return cudaStatus;
 	}
     
-    //node buffer
-    //_cuFinalNodeBufferData = new float* [pxCount];
-    cudaStatus = cudaMalloc((void**)&_cuFinalNodeBuffer, sizeof(cuMatrix));
-    if (cudaStatus != cudaSuccess)
+    //node buffers
+    cuMatrix **cuNodes[] =
     {
-        makeMallocError("neural network final node array", cudaStatus);
-        return cudaStatus;
-    }
-    
-    std::string name = "node matrix array";
-    
-    cuMatrix temp = cuMatrix(matrix(1, pxCount * _pNet->getShape(_pNet->getShapeLen() - 1), nullptr));
-    cudaStatus = cudaMemcpy(_cuFinalNodeBuffer, &temp, sizeof(cuMatrix), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess)
+        &_cuInitialNodeBuffer,
+        &_cuFinalNodeBuffer
+    };
+
+    float** cuNodeData[] =
     {
-        makeMemcpyError(name.c_str(), cudaStatus);
-        return cudaStatus;
-    }
+        &_cuInitialNodeBufferData,
+        &_cuFinalNodeBufferData
+    };
 
-    float* tempData;
-    size_t tempDataSize = temp.cols * temp.rows * sizeof(float);
-    cudaStatus = cudaMalloc((void**)&tempData, tempDataSize);
-    if (cudaStatus != cudaSuccess)
+    int cuNodeSizes[] =
     {
-        makeMallocError((name + " data").c_str(), cudaStatus);
-        return cudaStatus;
-    }
+        _pNet->getShape(0),
+        _pNet->getShape(_pNet->getShapeLen() - 1),
+    };
 
-    cudaStatus = cudaMemcpy(tempData, temp.data, tempDataSize, cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess)
+    for (int i = 0; i < sizeof(cuNodeSizes) / sizeof(int); ++i)
     {
-        makeMemcpyError((name + " data").c_str(), cudaStatus);
-        return cudaStatus;
+        cudaStatus = cudaMalloc((void**)cuNodes[i], sizeof(cuMatrix));
+        if (cudaStatus != cudaSuccess)
+        {
+            makeMallocError("neural network final node array", cudaStatus);
+            return cudaStatus;
+        }
+
+        std::string name = "node matrix array";
+
+        cuMatrix temp = cuMatrix(matrix(1, pxCount * cuNodeSizes[i], nullptr));
+        cudaStatus = cudaMemcpy(*cuNodes[i], &temp, sizeof(cuMatrix), cudaMemcpyHostToDevice);
+        if (cudaStatus != cudaSuccess)
+        {
+            makeMemcpyError(name.c_str(), cudaStatus);
+            return cudaStatus;
+        }
+
+        float* tempData;
+        size_t tempDataSize = temp.cols * temp.rows * sizeof(float);
+        cudaStatus = cudaMalloc((void**)&tempData, tempDataSize);
+        if (cudaStatus != cudaSuccess)
+        {
+            makeMallocError((name + " data").c_str(), cudaStatus);
+            return cudaStatus;
+        }
+
+        cudaStatus = cudaMemcpy(tempData, temp.data, tempDataSize, cudaMemcpyHostToDevice);
+        if (cudaStatus != cudaSuccess)
+        {
+            makeMemcpyError((name + " data").c_str(), cudaStatus);
+            return cudaStatus;
+        }
+
+        cudaStatus = cudaMemcpy(&((*cuNodes[i])->data), &tempData, sizeof(float*), cudaMemcpyHostToDevice);
+        if (cudaStatus != cudaSuccess)
+        {
+            makeMemcpyError((name + " data pointer").c_str(), cudaStatus);
+            return cudaStatus;
+        }
+
+        *cuNodeData[i] = tempData;
+
+        //cuda linker fix prevents anything that uses cuMatrix from linking in c++ in more than one place.
+        //makeMatrix(&cuNodes[i], cuNodeData[i],
+        //    cuMatrix(matrix(1, pxCount * cuNodeSizes[i], nullptr)), name);
     }
-
-    cudaStatus = cudaMemcpy(&(_cuFinalNodeBuffer->data), &tempData, sizeof(float*), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess)
-    {
-        makeMemcpyError((name + " data pointer").c_str(), cudaStatus);
-        return cudaStatus;
-    }
-
-    _cuFinalNodeBufferData = tempData;
-    
-
-    //cuda linker fix prevents anything that uses cuMatrix from linking in c++
-    //makeMatrix(_cuFinalNodeBuffer, &_cuFinalNodeBufferData,
-    //    cuMatrix(matrix(1, pxCount * _pNet->getShape(_pNet->getShapeLen() - 1), nullptr)), name);
 
 	_grid = dim3(_pWnd->getWidth(), _pWnd->getHeight());
 
@@ -103,6 +123,8 @@ cudaNNetRenderer::cudaNNetRenderer() :
 cudaNNetRenderer::~cudaNNetRenderer()
 {
 	cuSafeFree((void**)&_cuColorBuffer);
+    cuSafeFree((void**)&_cuInitialNodeBufferData);
+    cuSafeFree((void**)&_cuInitialNodeBuffer);
     cuSafeFree((void**)&_cuFinalNodeBufferData);
     cuSafeFree((void**)&_cuFinalNodeBuffer);
 
@@ -146,7 +168,16 @@ cudaError cudaNNetRenderer::cudaRenderNNet() const
     dim3 threadgrid = dim3(32, 8); // 800*600 is divisible by 256, but 600 is not divisible by 16. 32*8 = 16*16
     dim3 blockgrid = dim3(_grid.x / threadgrid.x, _grid.y / threadgrid.y);
 
-    keForwardProp <<<blockgrid, threadgrid>>> (_cuFinalNodeBuffer, _cuWeights, _cuNumWeights);
+    //should this be precomputed? the camera doesn't move.
+    keRasterize <<<blockgrid, threadgrid >>> (_cuInitialNodeBuffer);
+    cudaStatus = cudaGetLastError();
+    if (cudaStatus != cudaSuccess)
+    {
+        makeKernelError("keRasterize", cudaStatus);
+        return cudaStatus;
+    }
+
+    keForwardProp <<<blockgrid, threadgrid>>> (_cuFinalNodeBuffer, _cuInitialNodeBuffer, _cuWeights, _cuNumWeights);
     cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess)
     {
@@ -268,7 +299,7 @@ __global__ void kernel(unsigned char* colorBuffer, cuMatrix* cuWeights, int* cuN
     px[3] = 0xFF;
 }
 
-__global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuWeights, int* cuNumWeights)
+__global__ void keRasterize(cuMatrix* cuInitialNode)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -278,8 +309,21 @@ __global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuWeights, int* c
     float Y = (((float)y / (float)(gridDim.y * blockDim.y)) * 2.0 - 1.0) * 3.0;
 
     float initialNode[2] = { X, Y };
-    cuMatrix output = cuForwardProp(cuMatrix(1, 2, initialNode), cuWeights, cuNumWeights);
-    memcpy(&cuFinalNode->data[offset * output.cols * output.rows], output.data, output.cols * output.rows * sizeof(float));
+    memcpy(&cuInitialNode->data[offset * 1 * 2],
+        initialNode, 1 * 2 * sizeof(float));
+}
+
+__global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuInitialNode, cuMatrix* cuWeights, int* cuNumWeights)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int offset = x + y * gridDim.x * blockDim.x;
+
+    cuMatrix input(1, 2, &cuInitialNode->data[offset * 1 * 2]); // hardcoded
+
+    cuMatrix output = cuForwardProp(input, cuWeights, cuNumWeights);
+    memcpy(&cuFinalNode->data[offset * output.cols * output.rows],
+        output.data, output.cols * output.rows * sizeof(float));
 }
 
 __global__ void keDisplayNodes(unsigned char* cuColorBuffer, cuMatrix* cuFinalNode)

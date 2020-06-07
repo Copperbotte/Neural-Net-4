@@ -8,7 +8,6 @@
 
 namespace
 {
-
     struct cuMatrix
     {
         int cols, rows;
@@ -44,8 +43,8 @@ protected:
 
     cudaError makeBuffers();
     //makeMatrix won't link, because the above cuMatrix is defined in two spots.
-    //Its defined in two spots, because cuda requires all the device code to be
-    //  in the same file. Either c++ wont link, or cuda won't.
+    //This is because cuda requires all the device code to be in the same file.
+    //Either c++ wont link, or cuda won't.
     cudaError makeMatrix(cuMatrix* output, float** outputData, const cuMatrix& input, const std::string name);
     void makeMallocError(const char* err, cudaError cudaStatus) const;
     void makeMemcpyError(const char* err, cudaError cudaStatus) const;

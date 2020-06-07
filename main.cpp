@@ -13,21 +13,15 @@ void generateSampleFunctionData(matrix** i_matrix, matrix** o_matrix, float (*te
 
 int main()
 {
-    //int shape[] = { 2, 3, 1 };
     int shape[] = { 2, 1 };
     int shapelen = sizeof(shape) / sizeof(int);
 
-    //NNet net = NNet();
     NNet net = NNet(shapelen, shape);
     net.randomizeNodes(GetTickCount());
     net.setRate(0.25);
 
     float (*test_func)(float, float) = [](float x, float y)
     {
-        //float X = x - 1;
-        //if (X * X + y * y < 4.0) return 1.0f;
-        //return -1.0f;
-        //return sin(2.0f * x) * sin(2.0f * y);
         return x + y - 2;
     };
 

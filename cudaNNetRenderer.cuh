@@ -6,6 +6,10 @@ class cudaNNetRenderer : public cudaNNetProcessor
 {
 private:
 	unsigned char* _cuColorBuffer;
+
+	cuMatrix* _cuInitialNodeBuffer;
+	float* _cuInitialNodeBufferData;
+
 	cuMatrix* _cuFinalNodeBuffer;
 	float* _cuFinalNodeBufferData;
 
