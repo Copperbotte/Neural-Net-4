@@ -9,6 +9,12 @@
 #include <string>
 #include "cudaNNetProcessor.cuh"
 
+__global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuInitialNode, cuMatrix* cuWeights,
+    int* cuNumWeights, int cuArrayCount);
+namespace {
+    __device__ cuMatrix cuForwardProp(cuMatrix& input, const cuMatrix* cuWeights, int* cuNumWeights);
+}
+
 int clamp(int x, int low, int high)
 {
     if (x < low) x = low;
@@ -181,6 +187,12 @@ void cudaNNetProcessor::makeMemcpyError(const char* err, cudaError cudaStatus) c
     std::cout << "error code: " << cudaGetErrorString(cudaStatus);
 }
 
+void cudaNNetProcessor::makeKernelError(const char* err, cudaError cudaStatus) const
+{
+    std::cout << "Failure in gpu kernel " << err << "!\n";
+    std::cout << "error code : " << cudaGetErrorString(cudaStatus);
+}
+
 void cudaNNetProcessor::safeFreeArray(void** ptr)
 {
     if (!*ptr) return;
@@ -257,9 +269,42 @@ cudaError cudaNNetProcessor::cudaCopyNNet() const
     return cudaStatus;
 }
 
+cudaError cudaNNetProcessor::cudaForwardPropArray(void* cuFinalNode, void* cuInitialNode, 
+    int cuArrayCount, dim3& threadGrid, dim3& blockGrid) const
+{
+    cudaError cudaStatus = cudaSuccess;
+
+    keForwardProp <<<blockGrid, threadGrid >>> ((cuMatrix*)cuFinalNode, (cuMatrix*)cuInitialNode,
+        _cuWeights, _cuNumWeights, cuArrayCount);
+    cudaStatus = cudaGetLastError();
+    if (cudaStatus != cudaSuccess)
+    {
+        makeKernelError("keForwardProp", cudaStatus);
+        return cudaStatus;
+    }
+
+    return cudaStatus;
+}
+
 //Cuda device code
 //these decorated functions appear to have to not sit in a class structure.
 //Maybe they can be wrapped?
+
+__global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuInitialNode, cuMatrix* cuWeights, int* cuNumWeights, int cuArrayCount)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int offset = x + y * gridDim.x * blockDim.x;
+
+    int inputDataCount = cuInitialNode->getDataCount() / cuArrayCount;
+    int outputDataCount = cuFinalNode->getDataCount() / cuArrayCount;
+    cuMatrix input(cuInitialNode->cols, cuInitialNode->rows / cuArrayCount,
+        &cuInitialNode->data[offset * inputDataCount]);
+
+    cuMatrix output = cuForwardProp(input, cuWeights, cuNumWeights);
+    memcpy(&cuFinalNode->data[offset * outputDataCount],
+        output.data, outputDataCount * sizeof(float));
+}
 
 namespace
 {
@@ -329,6 +374,11 @@ namespace
     __device__ void cuMatrix::setData(int c, int r, float d)
     {
         data[r * cols + c] = d;
+    }
+
+    __device__ int cuMatrix::getDataCount() const
+    {
+        return cols * rows;
     }
 
     __device__ cuMatrix cuForwardProp(cuMatrix& input, const cuMatrix* cuWeights, int* cuNumWeights)

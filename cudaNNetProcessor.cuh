@@ -25,6 +25,8 @@ namespace
 
         __device__ float getData(int c, int r) const;
         __device__ void setData(int c, int r, float d);
+
+        __device__ int getDataCount() const;
     };
 }
 
@@ -48,6 +50,7 @@ protected:
     cudaError makeMatrix(cuMatrix* output, float** outputData, const cuMatrix& input, const std::string name);
     void makeMallocError(const char* err, cudaError cudaStatus) const;
     void makeMemcpyError(const char* err, cudaError cudaStatus) const;
+    void makeKernelError(const char* err, cudaError cudaStatus) const;
     void safeFreeArray(void** ptr);
     void cuSafeFree(void** ptr);
 
@@ -62,5 +65,6 @@ public:
     cudaError cudaCopyNNet() const;
     
     //cudaError cudaForwardPropStep(int n);
-    //cudaError cudaForwardProp();
+    cudaError cudaForwardPropArray(void* cuFinalNode, void* cuInitialNode,
+        int cuArrayCount, dim3 &threadGrid, dim3 &blockGrid) const;
 };

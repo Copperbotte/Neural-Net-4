@@ -11,8 +11,9 @@
 __global__ void kernel(unsigned char* colorBuffer, cuMatrix* cuWeights, int* cuNumWeights);
 __global__ void testKernel(unsigned char* colorBuffer, cuMatrix* cuWeights, int* cuNumWeights);
 
-__global__ void keRasterize(cuMatrix* cuInitialNode);
-__global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuInitialNode, cuMatrix* cuWeights, int* cuNumWeights);
+__global__ void keRasterize(cuMatrix* cuInitialNode, int cuArrayCount);
+//__global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuInitialNode,
+//    cuMatrix* cuWeights, int* cuNumWeights, int cuArrayCount);
 __global__ void keDisplayNodes(unsigned char* cuColorBuffer, cuMatrix* cuFinalNode);
 
 cudaError cudaNNetRenderer::makeBuffers()
@@ -148,13 +149,6 @@ cudaNNetRenderer::cudaNNetRenderer(const cudaNNetRenderer& R) :
 
 cudaError cudaNNetRenderer::cudaRenderNNet() const
 {
-    cudaError (*makeKernelError)(const char*, cudaError) = [](const char* err, cudaError cudaStatus)
-    {
-        std::cout << "Failure in gpu kernel " << err << "!\n";
-        std::cout << "error code : " << cudaGetErrorString(cudaStatus);
-        return cudaStatus;
-    };
-
     cudaError cudaStatus = cudaSuccess;
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess)
@@ -165,11 +159,12 @@ cudaError cudaNNetRenderer::cudaRenderNNet() const
     }
 
     //render screen
+    int cuArrayCount = _grid.x * _grid.y;
     dim3 threadgrid = dim3(32, 8); // 800*600 is divisible by 256, but 600 is not divisible by 16. 32*8 = 16*16
     dim3 blockgrid = dim3(_grid.x / threadgrid.x, _grid.y / threadgrid.y);
 
     //should this be precomputed? the camera doesn't move.
-    keRasterize <<<blockgrid, threadgrid >>> (_cuInitialNodeBuffer);
+    keRasterize <<<blockgrid, threadgrid >>> (_cuInitialNodeBuffer, cuArrayCount);
     cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess)
     {
@@ -177,13 +172,10 @@ cudaError cudaNNetRenderer::cudaRenderNNet() const
         return cudaStatus;
     }
 
-    keForwardProp <<<blockgrid, threadgrid>>> (_cuFinalNodeBuffer, _cuInitialNodeBuffer, _cuWeights, _cuNumWeights);
-    cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess)
-    {
-        makeKernelError("keForwardProp", cudaStatus);
-        return cudaStatus;
-    }
+    //Call generic forward propogation
+    cudaStatus = cudaForwardPropArray((void*)_cuFinalNodeBuffer, (void*)_cuInitialNodeBuffer,
+        cuArrayCount, threadgrid, blockgrid);
+    if (cudaStatus != cudaSuccess) return cudaStatus;
 
     keDisplayNodes <<<blockgrid, threadgrid>>> (_cuColorBuffer, _cuFinalNodeBuffer);
     cudaStatus = cudaGetLastError();
@@ -245,32 +237,34 @@ cudaError cudaNNetRenderer::cudaRenderNNetMonolithic() const
 //these decorated functions appear to have to not sit in a class structure.
 //Maybe they can be wrapped?
 
-__device__ cuMatrix cuForwardProp(cuMatrix& input, const cuMatrix* cuWeights, int* cuNumWeights)
-{
-    //this should have as much static memory as possible
-    cuMatrix node = input;
-
-    for (int i = 0; i < *cuNumWeights; ++i)
+namespace {
+    __device__ cuMatrix cuForwardProp(cuMatrix& input, const cuMatrix* cuWeights, int* cuNumWeights)
     {
-        cuMatrix bias = cuMatrix(1, node.rows + 1);
-        memcpy(&bias.data[1], node.data, node.rows * sizeof(float));
-        bias.setData(0, 0, 1.0f);
+        //this should have as much static memory as possible
+        cuMatrix node = input;
 
-        for (int r = 1; r < node.rows; ++r)
+        for (int i = 0; i < *cuNumWeights; ++i)
         {
-            //apply sigmoid
-            float sig = bias.getData(0, r);
-            //if (cuSigmoidIndices[i] == 1)
-            if (0 < i)
-                sig = tanhf(sig);
-            bias.setData(0, r, sig);
+            cuMatrix bias = cuMatrix(1, node.rows + 1);
+            memcpy(&bias.data[1], node.data, node.rows * sizeof(float));
+            bias.setData(0, 0, 1.0f);
+
+            for (int r = 1; r < node.rows; ++r)
+            {
+                //apply sigmoid
+                float sig = bias.getData(0, r);
+                //if (cuSigmoidIndices[i] == 1)
+                if (0 < i)
+                    sig = tanhf(sig);
+                bias.setData(0, r, sig);
+            }
+
+            //forward propogate
+            node = cuWeights[i] * bias;
         }
 
-        //forward propogate
-        node = cuWeights[i] * bias;
+        return node;
     }
-
-    return node;
 }
 
 //this kernel is slightly faster than its parts and gets to stick around for testing
@@ -299,7 +293,7 @@ __global__ void kernel(unsigned char* colorBuffer, cuMatrix* cuWeights, int* cuN
     px[3] = 0xFF;
 }
 
-__global__ void keRasterize(cuMatrix* cuInitialNode)
+__global__ void keRasterize(cuMatrix* cuInitialNode, int cuArrayCount)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -309,21 +303,9 @@ __global__ void keRasterize(cuMatrix* cuInitialNode)
     float Y = (((float)y / (float)(gridDim.y * blockDim.y)) * 2.0 - 1.0) * 3.0;
 
     float initialNode[2] = { X, Y };
-    memcpy(&cuInitialNode->data[offset * 1 * 2],
-        initialNode, 1 * 2 * sizeof(float));
-}
-
-__global__ void keForwardProp(cuMatrix* cuFinalNode, cuMatrix* cuInitialNode, cuMatrix* cuWeights, int* cuNumWeights)
-{
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-    int offset = x + y * gridDim.x * blockDim.x;
-
-    cuMatrix input(1, 2, &cuInitialNode->data[offset * 1 * 2]); // hardcoded
-
-    cuMatrix output = cuForwardProp(input, cuWeights, cuNumWeights);
-    memcpy(&cuFinalNode->data[offset * output.cols * output.rows],
-        output.data, output.cols * output.rows * sizeof(float));
+    int dataCount = cuInitialNode->getDataCount() / cuArrayCount;
+    memcpy(&cuInitialNode->data[offset * dataCount],
+        initialNode, dataCount * sizeof(float));
 }
 
 __global__ void keDisplayNodes(unsigned char* cuColorBuffer, cuMatrix* cuFinalNode)
@@ -450,5 +432,10 @@ namespace
     __device__ void cuMatrix::setData(int c, int r, float d)
     {
         data[r * cols + c] = d;
+    }
+
+    __device__ int cuMatrix::getDataCount() const
+    {
+        return cols * rows;
     }
 }
